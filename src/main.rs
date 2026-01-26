@@ -1,4 +1,4 @@
-use rekv::rekvd::run_server;
+use crate::api::run_server;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
