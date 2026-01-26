@@ -72,6 +72,7 @@ rekv/
 │   └── path_resolver.rs # Resolves virtual XPaths to physical keys
 ├── Cargo.toml           # Dependencies
 ├── LICENSE              # Apache 2.0 License
+├── benchmarking.md      # Benchmarking and testing strategies
 └── README.md            # This file
 ```
 
