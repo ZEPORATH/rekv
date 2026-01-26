@@ -1,0 +1,28 @@
+# Dockerfile for rekvd service on Raspberry Pi (armv7)
+
+# --- Build Stage ---
+FROM rust-cross/rust-raspberry-pi-cross-toolchains:latest-armv7-gnueabihf AS build
+
+WORKDIR /app
+
+# Install cross-compilation target
+RUN rustup target add armv7-unknown-linux-gnueabihf
+
+# Copy your source code
+COPY . .
+
+# Build the project for the armv7 target
+# Ensure the linker for armv7 is correctly set up for the build environment
+RUN cross build --target armv7-unknown-linux-gnueabihf --release
+
+# --- Runtime Stage ---
+# Use a minimal armv7 compatible base image for the final executable
+FROM arm32v7/debian:bullseye-slim
+
+WORKDIR /app
+
+# Copy the compiled armv7 binary from the build stage
+COPY --from=build /app/target/armv7-unknown-linux-gnueabihf/release/rekv /usr/local/bin/rekv
+
+# Set the entry point for the service
+CMD ["rekv"]
