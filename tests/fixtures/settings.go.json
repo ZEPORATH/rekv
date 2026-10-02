@@ -1,0 +1,238 @@
+{
+    "server": {
+        "port": 9090,
+        "log_level": "info"
+    },
+    "edge": {
+        "discovery_mode": "static",
+        "mdns_service_type": "_syncheon._tcp",
+        "mdns_instance_name": "SyncheonEdge",
+        "static_address": "127.0.0.1:50051",
+        "connection_timeout_sec": 5
+    },
+    "storage": {
+        "data_dir": "./data/runs",
+        "db_path": "./data/syncheon.db"
+    },
+    "plotter": {
+        "default_series": [
+            {
+                "series_id": "temp_surf",
+                "x_channel": "TIME",
+                "y_channel": "HEAT_SURF",
+                "bucket_size": 1,
+                "max_points": 1000
+            },
+            {
+                "series_id": "temp_sink",
+                "x_channel": "TIME",
+                "y_channel": "HEAT_SINK",
+                "bucket_size": 1,
+                "max_points": 1000
+            },
+            {
+                "series_id": "temp_diff",
+                "x_channel": "TIME",
+                "y_channel": "DELTA_T",
+                "bucket_size": 1,
+                "max_points": 1000
+            },
+            {
+                "series_id": "pyro_current",
+                "x_channel": "TIME",
+                "y_channel": "CALC_PYRO_CURRENT",
+                "bucket_size": 1,
+                "max_points": 1000
+            },
+            {
+                "series_id": "peltier_power",
+                "x_channel": "TIME",
+                "y_channel": "POWER_OBTAINED",
+                "bucket_size": 1,
+                "max_points": 1000
+            }
+        ]
+    },
+    "experiment_defaults": {
+        "constants": {
+            "active_area": 1,
+            "active_thickness": 0.1,
+            "pyro_coefficient": 4.5,
+            "thermal_mass": 2.1,
+            "window_size": 10
+        },
+        "telemetry_channels": [
+            "TIME",
+            "HEAT_SURF",
+            "HEAT_SINK",
+            "HEAT_PLATFORM",
+            "HUMIDITY",
+            "DELTA_T",
+            "DT_SURF_DT",
+            "CALC_PYRO_CURRENT",
+            "CALC_CURRENT_DENSITY",
+            "CALC_PYRO_CHARGE",
+            "TEMP_GRADIENT",
+            "HEAT_OBTAINED",
+            "POWER_OBTAINED"
+        ],
+        "channels": [
+            {
+                "id": "HEAT_SURF",
+                "label": "SURF",
+                "name": "Sample Surface Temperature",
+                "unit": "°C",
+                "decimals": 2,
+                "source": "ECU0 (/dev/ttyUSB0)",
+                "formula": "ADC PT100 Readout",
+                "color": "text-blue-600",
+                "is_visible": true
+            },
+            {
+                "id": "HEAT_SINK",
+                "label": "SINK",
+                "name": "Heat Sink Temperature",
+                "unit": "°C",
+                "decimals": 2,
+                "source": "ECU0 (/dev/ttyUSB0)",
+                "formula": "ADC PT100 Readout",
+                "color": "text-red-600",
+                "is_visible": true
+            },
+            {
+                "id": "DELTA_T",
+                "label": "ΔT",
+                "name": "Temperature Gradient (ΔT)",
+                "unit": "°C",
+                "decimals": 2,
+                "source": "Derived Calculation",
+                "formula": "HEAT_SURF - HEAT_SINK",
+                "color": "text-amber-600",
+                "is_visible": true
+            },
+            {
+                "id": "DT_SURF_DT",
+                "label": "dT/dt",
+                "name": "Rate of Temperature Change",
+                "unit": "°C/s",
+                "decimals": 3,
+                "source": "Derived Calculation",
+                "formula": "d(HEAT_SURF)/dt (Moving Window)",
+                "color": "text-slate-900",
+                "is_visible": true
+            },
+            {
+                "id": "CALC_PYRO_CURRENT",
+                "label": "Ip",
+                "name": "Pyroelectric Current (Ip)",
+                "unit": "µA",
+                "decimals": 4,
+                "source": "Derived Calculation",
+                "formula": "p · A · (dT/dt)",
+                "color": "text-purple-600",
+                "is_visible": true
+            },
+            {
+                "id": "POWER_OBTAINED",
+                "label": "POWER",
+                "name": "Thermal Power (P)",
+                "unit": "mW",
+                "decimals": 3,
+                "source": "Derived Calculation",
+                "formula": "dQ/dt",
+                "color": "text-emerald-600",
+                "is_visible": true
+            },
+            {
+                "id": "HUMIDITY",
+                "label": "HUMIDITY",
+                "name": "Chamber Relative Humidity",
+                "unit": "%RH",
+                "decimals": 1,
+                "source": "arduino_ecu_1 (/dev/ttyACM0)",
+                "formula": "Direct Sensor ADC",
+                "color": "text-cyan-600",
+                "is_visible": true
+            },
+            {
+                "id": "HEAT_PLATFORM",
+                "label": "PLATFORM",
+                "name": "Platform Base Temperature",
+                "unit": "°C",
+                "decimals": 2,
+                "source": "arduino_ecu_1 (/dev/ttyACM0)",
+                "formula": "ADC PT100 Readout",
+                "color": "text-slate-700",
+                "is_visible": false
+            },
+            {
+                "id": "CALC_CURRENT_DENSITY",
+                "label": "J",
+                "name": "Current Density (J)",
+                "unit": "µA/cm²",
+                "decimals": 4,
+                "source": "Derived Calculation",
+                "formula": "Ip / Active_Area",
+                "color": "text-indigo-600",
+                "is_visible": false
+            },
+            {
+                "id": "CALC_PYRO_CHARGE",
+                "label": "Q_pyro",
+                "name": "Accumulated Pyroelectric Charge",
+                "unit": "µC",
+                "decimals": 4,
+                "source": "Derived Calculation",
+                "formula": "∫ Ip dt (Numerical Trapz)",
+                "color": "text-pink-600",
+                "is_visible": false
+            },
+            {
+                "id": "TEMP_GRADIENT",
+                "label": "GRADIENT",
+                "name": "Spatial Thermal Gradient",
+                "unit": "°C/mm",
+                "decimals": 3,
+                "source": "Derived Calculation",
+                "formula": "ΔT / Active_Thickness",
+                "color": "text-orange-600",
+                "is_visible": false
+            },
+            {
+                "id": "HEAT_OBTAINED",
+                "label": "HEAT",
+                "name": "Heat Energy (Q)",
+                "unit": "J",
+                "decimals": 3,
+                "source": "Derived Calculation",
+                "formula": "m · Cp · ΔT",
+                "color": "text-teal-600",
+                "is_visible": false
+            }
+        ]
+    },
+    "auth": {
+        "enabled": true,
+        "token_expiry_hours": 24,
+        "default_users": [
+            {
+                "username": "admin",
+                "password": "adminpassword",
+                "role": "admin",
+                "full_name": "System Administrator"
+            },
+            {
+                "username": "operator",
+                "password": "operatorpassword",
+                "role": "operator",
+                "full_name": "Lab Operator"
+            },
+            {
+                "username": "viewer",
+                "password": "viewerpassword",
+                "role": "viewer",
+                "full_name": "Guest Viewer"
+            }
+        ]
+    }
+}

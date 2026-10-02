@@ -1,0 +1,198 @@
+{
+    "platform_manager": {
+        "grpc_port": 50051,
+        "constants": {
+            "active_area": 1.0,
+            "active_thickness": 0.1,
+            "pyro_coefficient": 4.5,
+            "window_size": 10
+        },
+        "log": {
+            "dir": "/var/log/raut",
+            "filename": "app.log",
+            "rotate_bytes": 10485760,
+            "max_file_count": 9999,
+            "level": "info"
+        },
+        "measurement": {
+            "log_to_file": "data.txt",
+            "log_to_console": "on"
+        },
+        "io_modes": [
+            "read",
+            "write",
+            "buff_write",
+            "buff_read"
+        ],
+        "io_devices": [
+            {
+                "id": "ECU0",
+                "port": "/dev/ttyUSB0",
+                "baud_rate": 115200,
+                "out_buff_len": 60,
+                "in_data_seq": [
+                    "temperature",
+                    "temperature",
+                    "temperature",
+                    "humidity"
+                ]
+            },
+            {
+                "id": "arduino_ecu_1",
+                "port": "/dev/ttyACM0",
+                "baud_rate": 115200,
+                "out_buff_len": 25,
+                "in_data_seq": [
+                    "temperature",
+                    "humidity",
+                    "temperature"
+                ]
+            },
+            {
+                "id": "rpi_gpio",
+                "chip_type": "rpi",
+                "pins": [
+                    23,
+                    24,
+                    18,
+                    17,
+                    22,
+                    19,
+                    26,
+                    16
+                ]
+            }
+        ],
+        "peripherals": [
+            {
+                "id": "REED_UP",
+                "type": "reed",
+                "io_device_id": "rpi_gpio",
+                "pin": 23,
+                "io_mode": "read",
+                "monitoring_interval_ms": 100
+            },
+            {
+                "id": "REED_DOWN",
+                "type": "reed",
+                "pin": 24,
+                "io_device_id": "rpi_gpio",
+                "io_mode": "read",
+                "monitoring_interval_ms": 100
+            },
+            {
+                "id": "RELAY_DIMMER",
+                "type": "relay",
+                "pin": 18,
+                "default": 0,
+                "io_device_id": "rpi_gpio",
+                "io_mode": "write"
+            },
+            {
+                "id": "RELAY_FAN_0",
+                "type": "relay",
+                "pin": 17,
+                "default": 0,
+                "io_device_id": "rpi_gpio",
+                "io_mode": "write"
+            },
+            {
+                "id": "RELAY_PELTIER",
+                "type": "relay",
+                "pin": 22,
+                "io_device_id": "rpi_gpio",
+                "io_mode": "write",
+                "default": 0
+            },
+            {
+                "id": "STEPPER_RAMP",
+                "type": "stepper",
+                "pin_dir": 19,
+                "pin_enable": 26,
+                "pin_step": 16,
+                "steps_per_rev": 200,
+                "stall_bw_steps_us": 500,
+                "io_device_id": "rpi_gpio",
+                "io_mode": "write",
+                "reset_position": "REED_UP",
+                "reset_direction": "front"
+            },
+            {
+                "id": "HEAT_SINK",
+                "type": "temperature",
+                "io_device_id": "ECU0",
+                "io_mode": "buff_read",
+                "precision": 4
+            },
+            {
+                "id": "HEAT_SURF",
+                "type": "temperature",
+                "io_device_id": "ECU0",
+                "io_mode": "buff_read",
+                "precision": 4
+            },
+            {
+                "id": "HEAT_PLATFORM",
+                "type": "temperature",
+                "io_device_id": "ECU0",
+                "io_mode": "buff_read",
+                "precision": 4
+            },
+            {
+                "id": "HUMIDITY",
+                "type": "humidity",
+                "io_device_id": "ECU0",
+                "io_mode": "buff_read",
+                "precision": 4
+            },
+            {
+                "id": "HEAT_SURF_1",
+                "type": "temperature",
+                "io_device_id": "arduino_ecu_1",
+                "io_mode": "buff_read",
+                "precision": 2
+            },
+            {
+                "id": "HUMIDITY_1",
+                "type": "humidity",
+                "io_device_id": "arduino_ecu_1",
+                "io_mode": "buff_read",
+                "precision": 2
+            },
+            {
+                "id": "HEAT_SINK_1",
+                "type": "temperature",
+                "io_device_id": "arduino_ecu_1",
+                "io_mode": "buff_read",
+                "precision": 2
+            }
+        ],
+        "safety_rules": [
+            {
+                "name": "ramp_upper_limit",
+                "type": "limit_interlock",
+                "sensor": "REED_UP",
+                "actuator": "STEPPER_RAMP",
+                "blocked_direction": "front",
+                "action": "emergency_stop"
+            },
+            {
+                "name": "ramp_lower_limit",
+                "type": "limit_interlock",
+                "sensor": "REED_DOWN",
+                "actuator": "STEPPER_RAMP",
+                "blocked_direction": "back",
+                "action": "emergency_stop"
+            },
+            {
+                "name": "thermal_cutoff",
+                "type": "threshold_cutoff",
+                "sensor": "HEAT_SURF",
+                "operator": ">=",
+                "threshold": 85.0,
+                "target": "RELAY_PELTIER",
+                "target_state": 0
+            }
+        ]
+    }
+}
