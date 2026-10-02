@@ -16,11 +16,41 @@ use crate::storage::{normalize_path, StorageError, Store};
 pub struct ConfigService {
     store: Arc<RwLock<Store>>,
     pubsub: Arc<PubSubEngine>,
+    read_only_paths: Arc<Vec<String>>,
 }
 
 impl ConfigService {
     pub fn new(store: Arc<RwLock<Store>>, pubsub: Arc<PubSubEngine>) -> Self {
-        Self { store, pubsub }
+        Self {
+            store,
+            pubsub,
+            read_only_paths: Arc::new(Vec::new()),
+        }
+    }
+
+    /// Subtrees that clients can read but never change. Any set/delete/restore whose result
+    /// would alter one of them (including a whole-document set on `/`) is rejected.
+    pub fn with_read_only_paths<I, S>(mut self, paths: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.read_only_paths = Arc::new(
+            paths
+                .into_iter()
+                .map(|path| normalize_path(path.as_ref()))
+                .collect(),
+        );
+        self
+    }
+
+    fn read_only_violation(&self, id: u64, current: &Store, candidate: &Store) -> Option<RpcResponse> {
+        self.read_only_paths
+            .iter()
+            .find(|path| current.get_subtree_ref(path) != candidate.get_subtree_ref(path))
+            .map(|path| {
+                RpcResponse::failure(id, ErrorCode::InvalidRequest, format!("'{path}' is read-only"))
+            })
     }
 
     pub fn store(&self) -> &Arc<RwLock<Store>> {
@@ -76,6 +106,9 @@ impl ConfigService {
         let old_value = candidate.get_subtree(&canonical_path);
         if let Err(error) = candidate.restore_delta(&canonical_path) {
             return storage_failure(id, error);
+        }
+        if let Some(rejection) = self.read_only_violation(id, &store, &candidate) {
+            return rejection;
         }
         if let Err(error) = candidate.persist() {
             return storage_failure(id, error);
@@ -188,6 +221,9 @@ impl ConfigService {
         }
         candidate.set_typed_lists(persisted_types);
 
+        if let Some(rejection) = self.read_only_violation(id, &store, &candidate) {
+            return rejection;
+        }
         if candidate.file_path().is_some() {
             if let Err(error) = candidate.persist() {
                 return storage_failure(id, error);
@@ -232,6 +268,9 @@ impl ConfigService {
             Ok(resolved_path) => resolved_path,
             Err(error) => return resolve_failure(id, error),
         };
+        if let Some(rejection) = self.read_only_violation(id, &store, &candidate) {
+            return rejection;
+        }
         if candidate.file_path().is_some() {
             if let Err(error) = candidate.persist() {
                 return storage_failure(id, error);
@@ -528,5 +567,60 @@ mod tests {
                 .get_leaf("/platform_manager/io_devices/0/baud_rate"),
             Some(&json!(115200))
         );
+    }
+
+    #[tokio::test]
+    async fn read_only_paths_reject_every_kind_of_write() {
+        let directory = tempdir().unwrap();
+        let settings_path = directory.path().join("settings.json");
+        fs::write(
+            &settings_path,
+            json!({
+                "error_codes": [{"code": 100, "name": "ERR_CONFIG_PARSING"}],
+                "device": {"name": "rig"}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let store = Arc::new(RwLock::new(Store::load_from_file(&settings_path).unwrap()));
+        let service = ConfigService::new(store.clone(), Arc::new(PubSubEngine::default()))
+            .with_read_only_paths(["/error_codes"]);
+        let request = |id: u64, method: &str, path: &str, value: Option<serde_json::Value>| RpcRequest {
+            id,
+            method: method.to_string(),
+            path: Some(path.to_string()),
+            value: value.map(crate::config_value::ConfigValue::from_json),
+        };
+
+        for (method, path, value) in [
+            ("set", "/error_codes[idx = 0]/name", Some(json!("ERR_OTHER"))),
+            ("set", "/error_codes", Some(json!([]))),
+            ("set", "/", Some(json!({"device": {"name": "rig"}}))),
+            ("delete", "/error_codes[idx = 0]", None),
+            ("delete", "/error_codes", None),
+        ] {
+            let response = service.dispatch(request(1, method, path, value)).await;
+            assert!(!response.ok, "{method} {path} must be rejected");
+            let message = response.error.unwrap().message;
+            assert!(message.contains("read-only"), "{method} {path}: {message}");
+        }
+        assert_eq!(
+            store.read().await.get_subtree("/error_codes").unwrap(),
+            json!([{"code": 100, "name": "ERR_CONFIG_PARSING"}])
+        );
+
+        // Reads and writes elsewhere still work, including a root set that keeps the subtree.
+        assert!(service.dispatch(request(2, "get", "/error_codes[idx = 0]/code", None)).await.ok);
+        assert!(
+            service
+                .dispatch(request(3, "set", "/device/name", Some(json!("rig-2"))))
+                .await
+                .ok
+        );
+        let whole = json!({
+            "error_codes": [{"code": 100, "name": "ERR_CONFIG_PARSING"}],
+            "device": {"name": "rig-3"}
+        });
+        assert!(service.dispatch(request(4, "set", "/", Some(whole))).await.ok);
     }
 }
