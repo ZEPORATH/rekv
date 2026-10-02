@@ -44,12 +44,21 @@ impl ConfigService {
         self
     }
 
-    fn read_only_violation(&self, id: u64, current: &Store, candidate: &Store) -> Option<RpcResponse> {
+    fn read_only_violation(
+        &self,
+        id: u64,
+        current: &Store,
+        candidate: &Store,
+    ) -> Option<RpcResponse> {
         self.read_only_paths
             .iter()
             .find(|path| current.get_subtree_ref(path) != candidate.get_subtree_ref(path))
             .map(|path| {
-                RpcResponse::failure(id, ErrorCode::InvalidRequest, format!("'{path}' is read-only"))
+                RpcResponse::failure(
+                    id,
+                    ErrorCode::InvalidRequest,
+                    format!("'{path}' is read-only"),
+                )
             })
     }
 
@@ -585,15 +594,20 @@ mod tests {
         let store = Arc::new(RwLock::new(Store::load_from_file(&settings_path).unwrap()));
         let service = ConfigService::new(store.clone(), Arc::new(PubSubEngine::default()))
             .with_read_only_paths(["/error_codes"]);
-        let request = |id: u64, method: &str, path: &str, value: Option<serde_json::Value>| RpcRequest {
-            id,
-            method: method.to_string(),
-            path: Some(path.to_string()),
-            value: value.map(crate::config_value::ConfigValue::from_json),
-        };
+        let request =
+            |id: u64, method: &str, path: &str, value: Option<serde_json::Value>| RpcRequest {
+                id,
+                method: method.to_string(),
+                path: Some(path.to_string()),
+                value: value.map(crate::config_value::ConfigValue::from_json),
+            };
 
         for (method, path, value) in [
-            ("set", "/error_codes[idx = 0]/name", Some(json!("ERR_OTHER"))),
+            (
+                "set",
+                "/error_codes[idx = 0]/name",
+                Some(json!("ERR_OTHER")),
+            ),
             ("set", "/error_codes", Some(json!([]))),
             ("set", "/", Some(json!({"device": {"name": "rig"}}))),
             ("delete", "/error_codes[idx = 0]", None),
@@ -610,7 +624,12 @@ mod tests {
         );
 
         // Reads and writes elsewhere still work, including a root set that keeps the subtree.
-        assert!(service.dispatch(request(2, "get", "/error_codes[idx = 0]/code", None)).await.ok);
+        assert!(
+            service
+                .dispatch(request(2, "get", "/error_codes[idx = 0]/code", None))
+                .await
+                .ok
+        );
         assert!(
             service
                 .dispatch(request(3, "set", "/device/name", Some(json!("rig-2"))))
@@ -621,6 +640,11 @@ mod tests {
             "error_codes": [{"code": 100, "name": "ERR_CONFIG_PARSING"}],
             "device": {"name": "rig-3"}
         });
-        assert!(service.dispatch(request(4, "set", "/", Some(whole))).await.ok);
+        assert!(
+            service
+                .dispatch(request(4, "set", "/", Some(whole)))
+                .await
+                .ok
+        );
     }
 }

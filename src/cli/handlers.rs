@@ -183,7 +183,10 @@ async fn execute_service_call(
     match method {
         "delete" => println!("Deleted {}", path.unwrap_or_default()),
         "backup" => println!("Delta saved to the settings directory's _delta.json"),
-        "restore" => println!("Restored {} from the original settings", path.unwrap_or_default()),
+        "restore" => println!(
+            "Restored {} from the original settings",
+            path.unwrap_or_default()
+        ),
         _ => {}
     }
     Ok(())

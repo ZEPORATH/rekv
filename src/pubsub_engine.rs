@@ -3,9 +3,7 @@ use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 
-use crate::constants::{
-    DEFAULT_BROADCAST_CHANNEL_CAPACITY, PATH_SEPARATOR_CHAR, ROOT_PATH,
-};
+use crate::constants::{DEFAULT_BROADCAST_CHANNEL_CAPACITY, PATH_SEPARATOR_CHAR, ROOT_PATH};
 use crate::storage::normalize_path;
 
 /// Event payload sent to subscribers when configuration changes.
@@ -22,7 +20,11 @@ pub struct ChangeEvent {
 }
 
 impl ChangeEvent {
-    pub fn new(path: impl Into<String>, old_val: Option<String>, new_val: impl Into<String>) -> Self {
+    pub fn new(
+        path: impl Into<String>,
+        old_val: Option<String>,
+        new_val: impl Into<String>,
+    ) -> Self {
         let timestamp_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -127,4 +129,3 @@ pub fn bubble_up_paths(path: &str) -> Vec<String> {
 
     paths
 }
-

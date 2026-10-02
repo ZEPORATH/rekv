@@ -28,7 +28,10 @@ pub async fn run_server_with_config(
         let count = store.leaf_count();
         (
             store,
-            format!("Base {:?} not found; loaded {} delta keys", config.settings_path, count),
+            format!(
+                "Base {:?} not found; loaded {} delta keys",
+                config.settings_path, count
+            ),
         )
     };
 

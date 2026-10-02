@@ -190,7 +190,9 @@ fn test_delta_tombstone_and_restore_leave_base_unchanged() {
     let mut store = Store::load_from_file(&settings_path).unwrap();
     let baud_path = "/platform_manager/io_devices/0/baud_rate";
     store.set(baud_path, json!(57600)).unwrap();
-    store.delete("/platform_manager/io_devices/1/baud_rate").unwrap();
+    store
+        .delete("/platform_manager/io_devices/1/baud_rate")
+        .unwrap();
     store.persist().unwrap();
 
     assert_eq!(fs::read(&settings_path).unwrap(), original);
@@ -206,6 +208,11 @@ fn test_delta_tombstone_and_restore_leave_base_unchanged() {
     store.persist().unwrap();
     let restored = Store::load_from_file(&settings_path).unwrap();
     assert_eq!(restored.get_leaf(baud_path), Some(&json!(115200)));
-    assert_eq!(restored.get_leaf("/platform_manager/io_devices/1/baud_rate"), None);
-    assert!(restored.delta_entries().contains_key("/platform_manager/io_devices/1/baud_rate"));
+    assert_eq!(
+        restored.get_leaf("/platform_manager/io_devices/1/baud_rate"),
+        None
+    );
+    assert!(restored
+        .delta_entries()
+        .contains_key("/platform_manager/io_devices/1/baud_rate"));
 }
