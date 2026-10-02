@@ -1,0 +1,12 @@
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends g++ nlohmann-json3-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY clients/cpp/include ./include
+COPY clients/cpp/src ./src
+COPY clients/cpp/examples ./examples
+RUN g++ -Iinclude -std=c++17 -O2 -Wall -Wextra -Werror \
+    src/config_client.cpp examples/watch_baud_rate.cpp -o watch_baud_rate
+ENTRYPOINT ["/bin/sh", "-c", "while [ ! -S /run/rekv/rekv.sock ]; do sleep 1; done; exec /app/watch_baud_rate \"${1:-/run/rekv/rekv.sock}\"", "--"]
+CMD ["/run/rekv/rekv.sock"]

@@ -1,7 +1,7 @@
 use std::fs;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tempfile::NamedTempFile;
+use tempfile::tempdir;
 use tokio::sync::{oneshot, RwLock};
 
 use rekv::api::grpc::{
@@ -14,15 +14,21 @@ use rekv::storage::Store;
 async fn test_grpc_watch_bubble_up_streaming() {
     // 1. Prepare Store with isolated temp copy of fixture
     let fixture_path = "tests/fixtures/settings.json";
-    let temp_settings = NamedTempFile::new().expect("Failed to create temp settings");
-    fs::copy(fixture_path, temp_settings.path()).expect("Failed to copy fixture");
+    let temp_dir = tempdir().expect("Failed to create temporary settings directory");
+    let temp_settings = temp_dir.path().join("settings.json");
+    fs::copy(fixture_path, &temp_settings).expect("Failed to copy fixture");
 
-    let store = Store::load_from_file(temp_settings.path()).expect("Failed to load store");
+    let store = Store::load_from_file(&temp_settings).expect("Failed to load store");
     let shared_store = Arc::new(RwLock::new(store));
     let pubsub = Arc::new(PubSubEngine::default());
 
     // 2. Bind and start gRPC server
-    let addr: SocketAddr = "127.0.0.1:50081".parse().unwrap();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
 
     let server_store = Arc::clone(&shared_store);
@@ -39,7 +45,9 @@ async fn test_grpc_watch_bubble_up_streaming() {
     tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
 
     // 3. Client 1 watches parent path: `/platform_manager/log`
-    let channel1 = tonic::transport::Channel::from_static("http://127.0.0.1:50081")
+    let endpoint = format!("http://127.0.0.1:{}", port);
+    let channel1 = tonic::transport::Endpoint::from_shared(endpoint.clone())
+        .unwrap()
         .connect()
         .await
         .unwrap();
@@ -53,7 +61,8 @@ async fn test_grpc_watch_bubble_up_streaming() {
         .into_inner();
 
     // 4. Client 2 watches root path: `/`
-    let channel2 = tonic::transport::Channel::from_static("http://127.0.0.1:50081")
+    let channel2 = tonic::transport::Endpoint::from_shared(endpoint.clone())
+        .unwrap()
         .connect()
         .await
         .unwrap();
@@ -67,7 +76,8 @@ async fn test_grpc_watch_bubble_up_streaming() {
         .into_inner();
 
     // 5. Client 3 watches sibling branch: `/platform_manager/peripherals`
-    let channel3 = tonic::transport::Channel::from_static("http://127.0.0.1:50081")
+    let channel3 = tonic::transport::Endpoint::from_shared(endpoint.clone())
+        .unwrap()
         .connect()
         .await
         .unwrap();
@@ -79,11 +89,19 @@ async fn test_grpc_watch_bubble_up_streaming() {
         .await
         .unwrap()
         .into_inner();
+    let mut stream_baud = client3
+        .watch(WatchRequest {
+            path: "/platform_manager/io_devices[id = ECU0]/baud_rate".to_string(),
+        })
+        .await
+        .unwrap()
+        .into_inner();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
     // 6. Client 4 modifies a child path: `/platform_manager/log/level` -> `"warn"`
-    let channel4 = tonic::transport::Channel::from_static("http://127.0.0.1:50081")
+    let channel4 = tonic::transport::Endpoint::from_shared(endpoint)
+        .unwrap()
         .connect()
         .await
         .unwrap();
@@ -120,10 +138,10 @@ async fn test_grpc_watch_bubble_up_streaming() {
     assert_eq!(event2.path, "/platform_manager/log/level");
     assert_eq!(event2.new_value, "\"warn\"");
 
-    // 9. Client 4 modifies a peripheral node: `/platform_manager/peripherals/0/pin` -> 25
+    // 9. Client 4 modifies a peripheral selected by its zero-based index.
     let set_resp2 = client4
         .set(SetRequest {
-            path: "/platform_manager/peripherals/0/pin".to_string(),
+            path: "/platform_manager/peripherals[idx = 0]/pin".to_string(),
             json_value: "25".to_string(),
         })
         .await
@@ -133,12 +151,14 @@ async fn test_grpc_watch_bubble_up_streaming() {
     assert!(set_resp2.success);
 
     // 10. Verify Client 3 receives the event on `/platform_manager/peripherals`:
-    let event3 =
-        tokio::time::timeout(tokio::time::Duration::from_secs(1), stream_peripherals.message())
-            .await
-            .expect("Timeout waiting for peripherals stream event")
-            .unwrap()
-            .expect("Stream closed unexpectedly");
+    let event3 = tokio::time::timeout(
+        tokio::time::Duration::from_secs(1),
+        stream_peripherals.message(),
+    )
+    .await
+    .expect("Timeout waiting for peripherals stream event")
+    .unwrap()
+    .expect("Stream closed unexpectedly");
 
     assert_eq!(event3.path, "/platform_manager/peripherals/0/pin");
     assert_eq!(event3.new_value, "25");
@@ -154,10 +174,29 @@ async fn test_grpc_watch_bubble_up_streaming() {
     assert_eq!(event_root2.path, "/platform_manager/peripherals/0/pin");
     assert_eq!(event_root2.new_value, "25");
 
+    let set_baud = client4
+        .set(SetRequest {
+            path: "/platform_manager/io_devices[id = ECU0]/baud_rate".to_string(),
+            json_value: "57600".to_string(),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(set_baud.success);
+    let baud_event =
+        tokio::time::timeout(tokio::time::Duration::from_secs(1), stream_baud.message())
+            .await
+            .expect("Timeout waiting for ID-addressed baud-rate event")
+            .unwrap()
+            .expect("Baud-rate stream closed unexpectedly");
+    assert_eq!(baud_event.path, "/platform_manager/io_devices/0/baud_rate");
+    assert_eq!(baud_event.new_value, "57600");
+
     // 12. Drop client streams so Tonic HTTP/2 server can terminate cleanly
     drop(stream_parent);
     drop(stream_root);
     drop(stream_peripherals);
+    drop(stream_baud);
     drop(client1);
     drop(client2);
     drop(client3);

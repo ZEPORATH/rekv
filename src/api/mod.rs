@@ -1,4 +1,5 @@
 pub mod grpc;
+pub mod http;
 pub mod server;
 pub mod uds;
 

@@ -1,8 +1,12 @@
 pub mod api;
 pub mod cli;
+pub mod client;
 pub mod config;
+pub mod config_service;
+pub mod config_value;
 pub mod constants;
 pub mod path_parser;
 pub mod path_resolver;
+pub mod protocol;
 pub mod pubsub_engine;
 pub mod storage;

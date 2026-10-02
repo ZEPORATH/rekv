@@ -1,4 +1,4 @@
-FROM rustlang/rust:nightly-bullseye-slim AS build
+FROM rust:slim AS build
 
 WORKDIR /app
 

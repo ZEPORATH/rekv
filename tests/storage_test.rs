@@ -1,6 +1,8 @@
+use std::fs;
+
 use rekv::storage::Store;
 use serde_json::json;
-use tempfile::NamedTempFile;
+use tempfile::tempdir;
 
 #[test]
 fn test_empty_store() {
@@ -24,6 +26,40 @@ fn test_basic_leaf_get_and_set() {
 }
 
 #[test]
+fn test_list_children_and_delete() {
+    let mut store = Store::from_value(
+        json!({
+            "device": { "name": "rpi-device", "enabled": true },
+            "sensors": [
+                { "id": "temperature", "threshold": 50.5 },
+                { "id": "humidity", "threshold": 80 }
+            ]
+        }),
+        None,
+    );
+
+    assert_eq!(
+        store.list_children("/device").unwrap(),
+        vec!["enabled", "name"]
+    );
+    assert_eq!(
+        store.list_children("/sensors").unwrap(),
+        vec!["temperature", "humidity"]
+    );
+
+    store.set("/labels", json!(["one", "two"])).unwrap();
+    assert_eq!(store.list_children("/labels").unwrap(), vec!["one", "two"]);
+
+    store.delete("/device/name").unwrap();
+    assert_eq!(store.get_leaf("/device/name"), None);
+    assert_eq!(store.list_children("/device").unwrap(), vec!["enabled"]);
+
+    store.delete("/sensors/0").unwrap();
+    assert_eq!(store.list_children("/sensors").unwrap(), vec!["humidity"]);
+    assert!(store.delete("/").is_err());
+}
+
+#[test]
 fn test_real_fixture_loading_and_lookups() {
     let fixture_path = "tests/fixtures/settings.json";
     let store = Store::load_from_file(fixture_path).expect("Failed to load settings.json fixture");
@@ -32,15 +68,26 @@ fn test_real_fixture_loading_and_lookups() {
     assert_eq!(store.leaf_count(), 136);
 
     // Test direct leaf lookups (O(1))
-    assert_eq!(store.get_leaf("/platform_manager/grpc_port"), Some(&json!(50051)));
-    assert_eq!(store.get_leaf("/platform_manager/log/level"), Some(&json!("info")));
-    assert_eq!(store.get_leaf("/platform_manager/constants/pyro_coefficient"), Some(&json!(4.5)));
+    assert_eq!(
+        store.get_leaf("/platform_manager/grpc_port"),
+        Some(&json!(50051))
+    );
+    assert_eq!(
+        store.get_leaf("/platform_manager/log/level"),
+        Some(&json!("info"))
+    );
+    assert_eq!(
+        store.get_leaf("/platform_manager/constants/pyro_coefficient"),
+        Some(&json!(4.5))
+    );
 
     // Test primary-key ID lookups (O(1))
     let reed_up_idx = store.find_index_by_id("/platform_manager/peripherals", "REED_UP");
     assert_eq!(reed_up_idx, Some(0));
 
-    let reed_up = store.get_item_by_id("/platform_manager/peripherals", "REED_UP").unwrap();
+    let reed_up = store
+        .get_item_by_id("/platform_manager/peripherals", "REED_UP")
+        .unwrap();
     assert_eq!(reed_up["pin"], json!(23));
     assert_eq!(reed_up["type"], json!("reed"));
 
@@ -48,7 +95,8 @@ fn test_real_fixture_loading_and_lookups() {
     assert_eq!(ecu0_idx, Some(0));
 
     // Test predicate filtering (O(1))
-    let reed_devices = store.get_items_by_predicate("/platform_manager/peripherals", "type", "reed");
+    let reed_devices =
+        store.get_items_by_predicate("/platform_manager/peripherals", "type", "reed");
     assert_eq!(reed_devices.len(), 2);
     assert_eq!(reed_devices[0]["id"], json!("REED_UP"));
     assert_eq!(reed_devices[1]["id"], json!("REED_DOWN"));
@@ -56,21 +104,28 @@ fn test_real_fixture_loading_and_lookups() {
     let relays = store.get_items_by_predicate("/platform_manager/peripherals", "type", "relay");
     assert_eq!(relays.len(), 3);
 
-    let buff_reads = store.find_indices_by_predicate("/platform_manager/peripherals", "io_mode", "buff_read");
+    let buff_reads =
+        store.find_indices_by_predicate("/platform_manager/peripherals", "io_mode", "buff_read");
     assert_eq!(buff_reads.len(), 7);
 }
 
 #[test]
 fn test_go_settings_fixture_lookups() {
     let fixture_path = "tests/fixtures/settings.go.json";
-    let store = Store::load_from_file(fixture_path).expect("Failed to load settings.go.json fixture");
+    let store =
+        Store::load_from_file(fixture_path).expect("Failed to load settings.go.json fixture");
 
     assert_eq!(store.leaf_count(), 174);
     assert_eq!(store.get_leaf("/server/port"), Some(&json!(9090)));
-    assert_eq!(store.get_leaf("/edge/static_address"), Some(&json!("127.0.0.1:50051")));
+    assert_eq!(
+        store.get_leaf("/edge/static_address"),
+        Some(&json!("127.0.0.1:50051"))
+    );
 
     // Test primary-key channel ID lookups:
-    let heat_surf = store.get_item_by_id("/experiment_defaults/channels", "HEAT_SURF").unwrap();
+    let heat_surf = store
+        .get_item_by_id("/experiment_defaults/channels", "HEAT_SURF")
+        .unwrap();
     assert_eq!(heat_surf["unit"], json!("°C"));
     assert_eq!(heat_surf["decimals"], json!(2));
 
@@ -104,19 +159,53 @@ fn test_prefix_scanning() {
 
 #[test]
 fn test_atomic_persistence_and_reload() {
-    let temp_file = NamedTempFile::new().unwrap();
-    let temp_path = temp_file.path().to_path_buf();
-
-    let mut store = Store::empty();
-    store.set_file_path(temp_path.clone());
+    let directory = tempdir().unwrap();
+    let settings_path = directory.path().join("settings.json");
+    fs::write(&settings_path, "{}\n").unwrap();
+    let mut store = Store::load_from_file(&settings_path).unwrap();
     store.set("/device/name", json!("SmartSensor")).unwrap();
     store.set("/device/baud", json!(115200)).unwrap();
 
-    // Persist to disk:
+    store.persist().unwrap();
+    assert_eq!(fs::read_to_string(&settings_path).unwrap(), "{}\n");
+    let delta: serde_json::Value =
+        serde_json::from_slice(&fs::read(directory.path().join("_delta.json")).unwrap()).unwrap();
+    assert_eq!(delta.as_object().unwrap().len(), 2);
+
+    let reloaded = Store::load_from_file(&settings_path).unwrap();
+    assert_eq!(
+        reloaded.get_leaf("/device/name"),
+        Some(&json!("SmartSensor"))
+    );
+    assert_eq!(reloaded.get_leaf("/device/baud"), Some(&json!(115200)));
+}
+
+#[test]
+fn test_delta_tombstone_and_restore_leave_base_unchanged() {
+    let directory = tempdir().unwrap();
+    let settings_path = directory.path().join("settings.json");
+    let original = fs::read("tests/fixtures/settings.json").unwrap();
+    fs::write(&settings_path, &original).unwrap();
+
+    let mut store = Store::load_from_file(&settings_path).unwrap();
+    let baud_path = "/platform_manager/io_devices/0/baud_rate";
+    store.set(baud_path, json!(57600)).unwrap();
+    store.delete("/platform_manager/io_devices/1/baud_rate").unwrap();
     store.persist().unwrap();
 
-    // Reload from disk into a new Store:
-    let reloaded = Store::load_from_file(&temp_path).unwrap();
-    assert_eq!(reloaded.get_leaf("/device/name"), Some(&json!("SmartSensor")));
-    assert_eq!(reloaded.get_leaf("/device/baud"), Some(&json!(115200)));
+    assert_eq!(fs::read(&settings_path).unwrap(), original);
+    let delta: serde_json::Value =
+        serde_json::from_slice(&fs::read(directory.path().join("_delta.json")).unwrap()).unwrap();
+    assert_eq!(delta[baud_path]["state"], "set");
+    assert_eq!(
+        delta["/platform_manager/io_devices/1/baud_rate"]["state"],
+        "unused"
+    );
+
+    store.restore_delta(baud_path).unwrap();
+    store.persist().unwrap();
+    let restored = Store::load_from_file(&settings_path).unwrap();
+    assert_eq!(restored.get_leaf(baud_path), Some(&json!(115200)));
+    assert_eq!(restored.get_leaf("/platform_manager/io_devices/1/baud_rate"), None);
+    assert!(restored.delta_entries().contains_key("/platform_manager/io_devices/1/baud_rate"));
 }

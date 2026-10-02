@@ -1,184 +1,117 @@
-# rekv: Rust Embedded Key Value store
+# rekv
 
-A lightweight hierarchical configuration service for Raspberry Pi and embedded systems. rekv provides a flexible API to manage JSON-based configuration.
+rekv is a Rust-owned configuration service backed by an original JSON settings file and a sparse sibling `_delta.json`. Clients use newline-delimited JSON over a Unix socket, a loopback HTTP API, or the retained gRPC compatibility API. All transports call one Rust configuration service and share one in-memory store.
 
-## Features
+The Go demo gateway calls gRPC, serves the React editor, and forwards gRPC Watch events to browsers over server-sent events. The Rust service remains the sole owner of settings and persistence.
 
-- **Hierarchical JSON configuration with XPath-like addressing** - Store nested configuration using XPath-like paths with multi-attribute support (e.g., `/device[id="sensor1"][type="temp"]/gpio/17/value`).
-- **Atomic persistence** - Config is saved to disk atomically (temp file + rename) to prevent corruption.
-- **rekvd as a Service** - A daemon process (`rekvd`) managing configurations.
-- **CLI for interaction** - A command-line interface to interact with the `rekvd` service.
-- **Single-writer, multi-reader** - Uses `RwLock` for safe concurrent access.
+## Build and run
 
-## Architecture
+Rust gRPC bindings are checked in, so builds need no system or vendored `protoc`. The compiled service needs only its settings file and local socket/HTTP ports at runtime, including on Raspberry Pi ARMv7.
 
-- **In-memory store**: Configuration is kept in memory as `serde_json::Value` for fast access.
-- **File persistence**: Config is persisted to a configurable file path.
-- **`rekvd` service**: A daemon process that exposes the configuration API.
-- **CLI**: A client application that interacts with `rekvd` service using gRPC or UDS.
-- **Storage Layer**: Utilizes `BTreeMap` for efficient storage of canonical keys and `HashMap` for attribute indexing.
-- **Concurrency**: Single-writer, multi-reader pattern using `std::sync::RwLock`.
-
-## CLI Usage (Planned)
-
-The `rekv` CLI tool will allow users to:
-
-- **Connect to `rekvd`**: The CLI will prioritize connecting via Unix Domain Sockets (UDS) for local communication. If a UDS connection is not possible or an alternative address is specified, it will attempt a gRPC connection.
-
-- **Specify service address**: Users can explicitly provide the address of the `rekvd` service using a flag (e.g., `--address` or `-a`). This will allow connecting to `rekvd` instances running on different hosts or ports.
-
-  ```bash
-  # Connect via local UDS (default)
-  rekv get /
-
-  # Connect via gRPC to a local address and port
-  rekv --address 127.0.0.1:50051 get /
-
-  # Connect via gRPC to a remote address and port
-  rekv --address my.remote.server:50051 get /device[id="sensor1"]/gpio
-  ```
-
-- **Get configuration**: Retrieve full configuration or a specific value by path.
-  ```bash
-  rekv get /
-  rekv get /device[id="sensor1"]/gpio
-  ```
-- **Set configuration**: Set a value at a given path.
-  ```bash
-  rekv set /device[id="sensor1"]/gpio/17/value 1
-  ```
-- **Watch for changes**: Subscribe to configuration updates.
-  ```bash
-  rekv watch /
-  ```
-
-## `rekvd` Service (Planned)
-
-The `rekvd` service will run as a background daemon, providing:
-
-- **gRPC API**: For remote and cross-language communication.
-- **Unix Domain Socket (UDS) API**: For ultra-low latency local communication with Rust/C applications.
-
-## Project Structure (Planned)
-
-```
-rekv/
-├── src/
-│   ├── main.rs          # Entry point, `rekvd` service setup, CLI entry point
-│   ├── config.rs        # Config store, persistence, path operations
-│   ├── api/             # gRPC and UDS API definitions and handlers
-│   ├── cli/             # CLI command parsing and execution logic
-│   ├── path_parser.rs   # Nom based parser for hierarchical paths and predicates
-│   └── path_resolver.rs # Resolves virtual XPaths to physical keys
-├── Cargo.toml           # Dependencies
-├── LICENSE              # Apache 2.0 License
-├── benchmarking.md      # Benchmarking and testing strategies
-└── README.md            # This file
-```
-
-## Deployment
-
-### 1. Obtaining Compiled Binaries
-
-The `rekv` project compiles into two main executables:
-- `rekvd`: The daemon service.
-- `rekv`: The command-line interface (CLI) tool.
-
-**Local Compilation (for your host machine):**
-
-```bash
+```sh
 cargo build --release
-```
-The binaries will be located at `target/release/rekvd` and `target/release/rekv`.
-
-**Cross-Compilation for Raspberry Pi (ARMv7):**
-
-To get the `armv7` binaries, you can either:
-
-*   **Use the Docker `armv7` build (recommended for CI/CD):** The `Dockerfile.rpi-armv7` and CircleCI setup will produce a Docker image. You can extract the binaries from this image.
-    ```bash
-    # After a successful CircleCI build or local docker build -f Dockerfile.rpi-armv7 -t rekv:latest-armv7 .
-    docker create --name rekv_armv7_extractor rekv:latest-armv7
-    docker cp rekv_armv7_extractor:/usr/local/bin/rekv ./rekv_armv7
-    docker rm rekv_armv7_extractor
-    # The 'rekv_armv7' file is your compiled ARMv7 binary
-    # You would typically have separate executables for rekvd and rekv CLI.
-    # For now, assuming 'rekv' is the daemon and CLI is built into it or separate.
-    # If separate, adjust Dockerfile.rpi-armv7 to copy both.
-    ```
-*   **Compile directly on Raspberry Pi:** The simplest way to get native binaries for a Raspberry Pi is to compile the project directly on the device.
-    ```bash
-    # On your Raspberry Pi
-    git clone <your_repo_url>
-    cd rekv
-    cargo build --release
-    ```
-    The binaries will be in `target/release/`.
-
-### 2. Deploying `rekvd` as a System Service
-
-For production deployments, `rekvd` should run as a background service. This example uses `systemd`, common on Linux distributions like Raspberry Pi OS.
-
-**A. Create a `systemd` service file:**
-
-Create a file named `/etc/systemd/system/rekvd.service` with the following content. Adjust `User`, `Group`, and `ExecStart` paths as necessary.
-
-```
-[Unit]
-Description=rekv Daemon Service
-After=network.target
-
-[Service]
-User=rekvuser          # Create this user or use an existing one
-Group=rekvgroup        # Create this group or use an existing one
-ExecStart=/usr/local/bin/rekvd  # Path to your rekvd binary
-WorkingDirectory=/var/lib/rekv # Directory for config file persistence
-StandardOutput=journal
-StandardError=journal
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
+cargo test
+mkdir -p /tmp/rekv-settings
+cp tests/fixtures/settings.json /tmp/rekv-settings/settings.json
+cargo run --bin rekv -- daemon \
+  --config /tmp/rekv-settings/settings.json \
+  --uds /tmp/rekv.sock \
+  --port 50051 \
+  --http-port 8080
 ```
 
-**B. Install and start the service:**
+The service never rewrites the source settings file; it writes edits to the sibling `/tmp/rekv-settings/_delta.json`.
 
-```bash
-sudo systemctl daemon-reload       # Reload systemd manager configuration
-sudo systemctl enable rekvd.service # Enable the service to start on boot
-sudo systemctl start rekvd.service  # Start the service immediately
-sudo systemctl status rekvd.service # Check the service status
+In a second terminal, a normal settings operation uses the provided device entry:
+
+```sh
+rekv-cli get '/platform_manager/io_devices[id = ECU0]/baud_rate'
+rekv-cli set '/platform_manager/io_devices[id = ECU0]/baud_rate' 57600
+rekv-cli backup
+rekv-cli restore '/platform_manager/io_devices[id = ECU0]/baud_rate'
+rekv-cli delete /platform_manager/new_setting
 ```
 
-**C. Create necessary directories and user/group:**
+The C++ subscriber prints that exact change; `read_value` prints the current value once:
 
-```bash
-sudo useradd -r -s /bin/false rekvuser  # Create a system user for rekvd
-sudo mkdir -p /var/lib/rekv           # Create directory for config persistence
-sudo chown rekvuser:rekvuser /var/lib/rekv # Set ownership
+```sh
+make -C clients/cpp
+./clients/cpp/watch_baud_rate /tmp/rekv.sock
 ```
 
-### 3. Shipping the `rekv` CLI Tool
+## Local Compose test
 
-The `rekv` CLI tool is a standalone executable.
+The local stack runs the Rust service, Go/React editor, and C++ watcher. It seeds a named settings volume from the real fixture on first start, so UI and CLI writes do not modify the checked-in fixture.
 
-**A. For individual users:**
-
-Simply place the compiled `rekv` binary in a directory that's included in the user's `PATH` environment variable (e.g., `/usr/local/bin`).
-
-```bash
-sudo cp /path/to/your/compiled/rekv /usr/local/bin/rekv
+```sh
+docker compose -f docker-compose.local-test.yml up --build -d
+docker compose -f docker-compose.local-test.yml ps
 ```
 
-**B. For wider distribution (e.g., package managers):**
+Open `http://<server-LAN-IP>:8099` from another machine. Change the selected ECU0 baud rate in the form, then inspect the C++ subscriber output:
 
-For more formal distribution, you would typically create a package (e.g., `.deb` for Debian/Ubuntu, `RPM` for Fedora/RHEL, or use cargo's `install` command for Rust projects if publishing to crates.io) that handles placing the `rekvd` daemon and `rekv` CLI tool in appropriate system directories and setting up the `systemd` service file. This is beyond the scope of a simple README but is the standard practice for robust deployments.
+```sh
+docker compose -f docker-compose.local-test.yml logs -f cpp-watcher
+```
 
-## License
+CLI operations use the same daemon and UDS:
 
-This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.
+```sh
+docker compose -f docker-compose.local-test.yml exec configd rekv --uds /run/rekv/rekv.sock get '/platform_manager/io_devices[id = ECU0]/baud_rate'
+docker compose -f docker-compose.local-test.yml exec configd rekv --uds /run/rekv/rekv.sock set '/platform_manager/io_devices[id = ECU0]/baud_rate' 57600
+docker compose -f docker-compose.local-test.yml exec configd rekv --uds /run/rekv/rekv.sock backup
+docker compose -f docker-compose.local-test.yml exec configd rekv --uds /run/rekv/rekv.sock restore '/platform_manager/io_devices[id = ECU0]/baud_rate'
+```
 
-## Contributing
+Stop the stack with `docker compose -f docker-compose.local-test.yml down`. Add `-v` to `down` to discard the test settings volume and reseed from the fixture next time.
 
-[Add contribution guidelines here]
+The service binds gRPC and HTTP to `127.0.0.1` by default. The UDS socket is owner-only. The Rust HTTP routes are:
+
+```text
+GET    /api/config?path=/device/name
+POST   /api/config                { "path": ..., "value": { "type": ..., "value": ... } }
+DELETE /api/config?path=/device/name
+GET    /api/config/list?path=/network/wifi
+POST   /api/rpc                   newline-JSON RPC request envelope
+```
+
+Successful responses carry `id`, `ok`, and an optional typed `result`; errors use `INVALID_REQUEST`, `INVALID_PATH`, `NOT_FOUND`, `INVALID_VALUE`, or `INTERNAL_ERROR`.
+
+## Language clients and editor
+
+The Rust client is `rekv::client::ConfigClient` and uses the UDS JSON contract. The Go client uses the typed gRPC `Call` operation. The C++ client uses UDS and nlohmann/json. The TypeScript client uses HTTP.
+
+Build the React editor and start the Go gateway:
+
+```sh
+npm --prefix web install
+npm --prefix web run build
+cd clients/go
+go test ./...
+go run ./cmd/demo-server --target 127.0.0.1:50051 --listen 127.0.0.1:8090 --web-root ../../web/dist
+```
+
+For live UI development, run `npm --prefix web run dev` from the repository root and open the Vite URL. The dev proxy forwards `/api` to the Go gateway. For a production demo, open `http://127.0.0.1:8090`.
+
+Build both C++ examples with `make -C clients/cpp`. They connect to the same UDS and use the real fixture's ECU0 baud-rate path.
+
+## Runtime values and persistence
+
+Wire values are schema-less envelopes: `string`, `integer`, `float`, `boolean`, `object`, `array`, `str_list`, `numeric_list`, and `null`. `str_list` and `numeric_list` are validated homogeneous arrays. The configured settings JSON is the immutable baseline. Saves write only changed canonical leaf paths to its sibling `_delta.json`; each entry is either `set` with a typed value or `unused` for a deleted baseline value. New settings are `set` entries whose path is absent from the baseline. On startup, rekv loads the baseline and overlays the delta. Restoring one path removes only that delta entry, revealing the original value or removing an added value. The baseline file is never rewritten by client changes.
+
+Object-array elements are selected with `[id = value]` or `[idx = n]`, for example `/platform_manager/io_devices[id = ECU0]/baud_rate`. `*` lists direct children of the selected object. Writes stage a candidate store and atomically update only the corresponding `_delta.json` entry before publishing changes to watchers.
+
+The retained gRPC API is a deliberate compatibility exception to the original MVP's no-gRPC constraint, requested for the Go demo. The new typed `Call` operation carries runtime envelopes; the legacy Get/Set/Watch methods remain available.
+
+## Verification
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo build --release
+cd clients/go && go test ./...
+npm --prefix web run build
+```
+
+For ARMv7 container builds, use `docker build -f Dockerfile.rpi-armv7 -t rekv:armv7 .`. The service does not require Go, Node, or C++ on its target device.

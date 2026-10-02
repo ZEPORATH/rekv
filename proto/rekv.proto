@@ -2,7 +2,12 @@ syntax = "proto3";
 
 package rekv;
 
+option go_package = "github.com/raut/rekv/clients/go/proto;rekvpb";
+
 service RekvService {
+  // Runtime-typed CRUD operation used by language clients.
+  rpc Call(RpcCallRequest) returns (RpcCallResponse);
+
   // Query configuration by XPath-like path
   rpc Get(GetRequest) returns (GetResponse);
 
@@ -11,6 +16,23 @@ service RekvService {
 
   // Watch for configuration changes at an XPath-like path in real-time
   rpc Watch(WatchRequest) returns (stream WatchEvent);
+}
+
+message RpcCallRequest {
+  uint64 id = 1;
+  string method = 2;
+  string path = 3;
+  // JSON-encoded ConfigValue envelope; empty for methods without a value.
+  string json_value = 4;
+}
+
+message RpcCallResponse {
+  uint64 id = 1;
+  bool ok = 2;
+  // JSON-encoded typed result.
+  string result_json = 3;
+  string error_code = 4;
+  string error_message = 5;
 }
 
 message GetRequest {

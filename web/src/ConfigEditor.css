@@ -1,0 +1,125 @@
+body {
+  margin: 1rem;
+  color: #111;
+  background: #fff;
+  font: 14px/1.4 system-ui, sans-serif;
+}
+
+.config-app {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.config-app h1 {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.config-app h2 {
+  margin: 0 0 .5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.config-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 38%) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.tree-panel,
+.setting-panel {
+  min-width: 0;
+  border: 1px solid #aaa;
+  padding: .75rem;
+}
+
+.tree-scroll {
+  max-height: calc(100vh - 7rem);
+  overflow: auto;
+}
+
+.tree-branch,
+.tree-leaf {
+  display: flex;
+  width: 100%;
+  min-height: 1.7rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding-block: .15rem;
+  padding-inline-end: .4rem;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tree-leaf {
+  border: 0;
+  background: transparent;
+}
+
+.tree-leaf[data-selected="true"],
+.tree-branch[data-selected="true"] {
+  background: #e8eef7;
+}
+
+.tree-branch small,
+.tree-leaf small {
+  color: #555;
+  font-size: .75rem;
+}
+
+.setting-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: .4rem;
+  margin-bottom: 1rem;
+}
+
+.setting-form label {
+  margin-top: .35rem;
+}
+
+.setting-form input,
+.setting-form select,
+.setting-form textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.setting-form textarea {
+  resize: vertical;
+  font-family: ui-monospace, monospace;
+}
+
+.path-row,
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .4rem;
+}
+
+.path-row input {
+  flex: 1 1 20rem;
+}
+
+.add-panel {
+  border-top: 1px solid #aaa;
+  padding-top: .6rem;
+}
+
+.add-panel summary {
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  body { margin: .6rem; }
+  .config-layout { grid-template-columns: 1fr; }
+  .tree-scroll { max-height: 40vh; }
+}

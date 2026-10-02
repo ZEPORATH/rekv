@@ -1,11 +1,18 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use crate::constants::{DEFAULT_CONFIG_PATH, DEFAULT_GRPC_PORT, DEFAULT_UDS_PATH};
+use crate::constants::{
+    DEFAULT_CONFIG_PATH, DEFAULT_GRPC_PORT, DEFAULT_HTTP_PORT, DEFAULT_UDS_PATH,
+};
 
 /// Top-level command-line arguments.
 #[derive(Parser, Debug)]
-#[command(name = "rekv", author, version, about = "Rust Embedded Key-Value & Config Store")]
+#[command(
+    name = "rekv",
+    author,
+    version,
+    about = "Rust Embedded Key-Value & Config Store"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -32,6 +39,14 @@ pub enum Commands {
         #[arg(short, long, default_value_t = DEFAULT_GRPC_PORT)]
         port: u16,
 
+        /// Port for the loopback HTTP API
+        #[arg(long, default_value_t = DEFAULT_HTTP_PORT)]
+        http_port: u16,
+
+        /// Interface for gRPC and HTTP listeners (default: 127.0.0.1)
+        #[arg(long, default_value = "127.0.0.1")]
+        bind_address: String,
+
         /// Path for Unix Domain Socket
         #[arg(short, long, default_value = DEFAULT_UDS_PATH)]
         uds: PathBuf,
@@ -50,6 +65,15 @@ pub enum Commands {
         /// JSON value string to set
         value: String,
     },
+
+    /// Delete a configuration value by path
+    Delete { path: String },
+
+    /// Flush changed paths to the sibling _delta.json file
+    Backup,
+
+    /// Restore one setting from the original JSON file
+    Restore { path: String },
 
     /// Watch configuration changes on a path in real-time
     Watch {

@@ -1,5 +1,8 @@
+use crate::constants::{
+    DEFAULT_CONFIG_PATH, DEFAULT_GRPC_PORT, DEFAULT_HTTP_PORT, DEFAULT_LOCAL_HOST,
+    DEFAULT_UDS_PATH,
+};
 use std::path::PathBuf;
-use crate::constants::{DEFAULT_CONFIG_PATH, DEFAULT_GRPC_PORT, DEFAULT_UDS_PATH};
 
 /// Daemon configuration options.
 #[derive(Debug, Clone)]
@@ -8,6 +11,10 @@ pub struct DaemonConfig {
     pub settings_path: PathBuf,
     /// Port for the gRPC server (default: 50051).
     pub grpc_port: u16,
+    /// Port for the HTTP API (default: 8080).
+    pub http_port: u16,
+    /// Network interface used by gRPC and HTTP (loopback by default).
+    pub bind_address: String,
     /// Path to Unix Domain Socket (default: /var/run/rekv.sock).
     pub uds_path: PathBuf,
 }
@@ -17,6 +24,8 @@ impl Default for DaemonConfig {
         Self {
             settings_path: PathBuf::from(DEFAULT_CONFIG_PATH),
             grpc_port: DEFAULT_GRPC_PORT,
+            http_port: DEFAULT_HTTP_PORT,
+            bind_address: DEFAULT_LOCAL_HOST.to_string(),
             uds_path: PathBuf::from(DEFAULT_UDS_PATH),
         }
     }
@@ -32,6 +41,16 @@ impl DaemonConfig {
 
     pub fn with_grpc_port(mut self, port: u16) -> Self {
         self.grpc_port = port;
+        self
+    }
+
+    pub fn with_http_port(mut self, port: u16) -> Self {
+        self.http_port = port;
+        self
+    }
+
+    pub fn with_bind_address(mut self, address: impl Into<String>) -> Self {
+        self.bind_address = address.into();
         self
     }
 

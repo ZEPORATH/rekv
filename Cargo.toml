@@ -2,6 +2,7 @@
 name = "rekv"
 version = "0.1.0"
 edition = "2021"
+autobins = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,10 +18,23 @@ clap = { version = "4", features = ["derive"] }
 nom = "7"
 tokio-stream = { version = "0.1", features = ["sync"] }
 async-stream = "0.3"
+axum = { version = "0.6", features = ["json"] }
+tower-http = { version = "0.4", features = ["cors"] }
 
 [dev-dependencies]
 tempfile = "3"
+tower = { version = "0.4", features = ["util"] }
+hyper = "0.14"
+criterion = "0.5"
 
-[build-dependencies]
-prost-build = "0.12.3"
-tonic-build = "0.11.0"
+[[bench]]
+name = "config_ops"
+harness = false
+
+[[bin]]
+name = "rekv"
+path = "src/main.rs"
+
+[[bin]]
+name = "rekv-cli"
+path = "src/cli_main.rs"

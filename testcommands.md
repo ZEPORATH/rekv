@@ -116,73 +116,27 @@ To see all settings in the store:
 rekv get /
 ```
 
-### 4.4 Read an item from a list (Array index)
-You can read array items by their number (starting from 0):
-
-Using slash:
+### 4.4 Select array items
+Select an object-array entry by its `id` field:
 ```bash
-rekv get /platform_manager/peripherals/0/pin
-```
-Using brackets:
-```bash
-rekv get /platform_manager/peripherals[0]/pin
+rekv get '/platform_manager/io_devices[id = ECU0]/baud_rate'
 ```
 
-### 4.5 Read an item using ID shorthand (`#ID`)
-If an item inside a list has an `"id"` field, you can use `#ID` directly:
+Select by zero-based position with `idx`:
 ```bash
-rekv get /platform_manager/peripherals#REED_UP/pin
-```
-Output example:
-```text
-23
+rekv get '/platform_manager/io_devices[idx = 1]/baud_rate'
 ```
 
-You can also read the entire object for that ID:
+Whitespace around `=` is optional. Selectors are limited to `id` and `idx`.
+
+### 4.5 List selected object fields
+Use a trailing `*` to list the direct fields of a selected object:
 ```bash
-rekv get /platform_manager/peripherals#REED_UP
+curl -G --data-urlencode 'path=/platform_manager/io_devices[id = ECU0]/*' \
+  http://127.0.0.1:8080/api/config/list
 ```
 
-### 4.6 Read items with filters (Predicates)
-You can filter items inside arrays:
-
-#### Filter by text:
-Find the `id` of any item where `type` is `"reed"`:
-```bash
-rekv get '/platform_manager/peripherals[type="reed"]/id'
-```
-
-#### Filter by number comparison:
-Find items where `pin` is 22 or bigger:
-```bash
-rekv get '/platform_manager/peripherals[pin>=22]/id'
-```
-
-You can use all these comparison operators:
-| Operator | Meaning | Example |
-| :--- | :--- | :--- |
-| `=` or `==` | Equal | `[type="reed"]` |
-| `!=` | Not equal | `[type!="reed"]` |
-| `>` | Greater than | `[pin>20]` |
-| `>=` | Greater than or equal | `[pin>=22]` |
-| `<` | Less than | `[threshold<90]` |
-| `<=` | Less than or equal | `[threshold<=85.0]` |
-
-#### Combine multiple filters:
-Find items where `type` is `"relay"` AND `default` is `0`:
-```bash
-rekv get '/platform_manager/peripherals[type="relay"][default=0]/id'
-```
-
-### 4.7 Read items using Wildcards (`*` and `**`)
-- Single level wildcard `*`:
-```bash
-rekv get '/platform_manager/io_devices/*/id'
-```
-- Multi-level recursive wildcard `**`:
-```bash
-rekv get '/**/pin'
-```
+Recursive wildcards and general predicates are not supported.
 
 ### 4.8 Connect to a specific server address or socket
 By default, the CLI first checks the local Unix socket, then falls back to `127.0.0.1:50051`.
@@ -234,17 +188,15 @@ If the path does not exist yet, `rekv` creates it automatically:
 rekv set /my_system/wifi/ssid '"Office_WiFi"'
 ```
 
-### 5.6 Broadcast update (Change many items at once!)
-You can use filters with `set`. `rekv` will find all matching items and update all of them in one command:
+### 5.6 Update one selected array item
+Use the same selector syntax for writes:
 ```bash
-rekv set '/platform_manager/peripherals[type="relay"]/default' 1
+rekv set '/platform_manager/io_devices[id = ECU0]/baud_rate' 57600
 ```
 Output:
 ```text
-OK (3 path(s) updated)
-  -> /platform_manager/peripherals/2/default
-  -> /platform_manager/peripherals/3/default
-  -> /platform_manager/peripherals/4/default
+OK (1 path(s) updated)
+  -> /platform_manager/io_devices/0/baud_rate
 ```
 
 ### 5.7 Connect to a specific server address or socket for `set`

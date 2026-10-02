@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1.7
+FROM rust:slim AS build
+WORKDIR /app
+COPY . .
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+	--mount=type=cache,target=/app/target,sharing=locked \
+	cargo build --release --bin rekv \
+	&& install -D /app/target/release/rekv /out/rekv
+
+FROM debian:bookworm-slim
+WORKDIR /app
+COPY --from=build /out/rekv /usr/local/bin/rekv
+CMD ["rekv"]

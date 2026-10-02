@@ -1,27 +1,32 @@
 use std::fs;
 use std::process::Command;
-use tempfile::NamedTempFile;
+use tempfile::tempdir;
 
 #[test]
 fn test_cli_daemon_and_commands() {
     let fixture_path = "tests/fixtures/settings.json";
-    let temp_settings = NamedTempFile::new().expect("Failed to create temp settings file");
-    fs::copy(fixture_path, temp_settings.path()).expect("Failed to copy fixture");
+    let temp_dir = tempdir().expect("Failed to create temporary settings directory");
+    let settings_path = temp_dir.path().join("settings.json");
+    fs::copy(fixture_path, &settings_path).expect("Failed to copy fixture");
+    let socket_path = temp_dir.path().join("rekv.sock");
 
-    let socket_temp = NamedTempFile::new().expect("Failed to create socket temp file");
-    let socket_path = socket_temp.path().to_path_buf();
-    drop(socket_temp);
-
-    let port = "50071";
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+        .to_string();
 
     // 1. Start daemon process
     let mut daemon = Command::new(env!("CARGO_BIN_EXE_rekv"))
         .args([
             "daemon",
             "--config",
-            temp_settings.path().to_str().unwrap(),
+            settings_path.to_str().unwrap(),
             "--port",
-            port,
+            &port,
+            "--http-port",
+            "0",
             "--uds",
             socket_path.to_str().unwrap(),
         ])
@@ -52,7 +57,7 @@ fn test_cli_daemon_and_commands() {
             "--address",
             &format!("127.0.0.1:{}", port),
             "get",
-            "/platform_manager/peripherals#REED_UP/pin",
+            "/platform_manager/peripherals[id = REED_UP]/pin",
         ])
         .output()
         .expect("Failed to run CLI get via gRPC");
@@ -89,6 +94,67 @@ fn test_cli_daemon_and_commands() {
     assert!(output_verify.status.success());
     let stdout_verify = String::from_utf8_lossy(&output_verify.stdout);
     assert_eq!(stdout_verify.trim(), "debug");
+
+    let output_backup = Command::new(env!("CARGO_BIN_EXE_rekv"))
+        .args(["--uds", socket_path.to_str().unwrap(), "backup"])
+        .output()
+        .expect("Failed to run backup");
+    assert!(output_backup.status.success());
+    let delta_path = temp_dir.path().join("_delta.json");
+    assert!(delta_path.exists());
+    let delta: serde_json::Value = serde_json::from_slice(&fs::read(&delta_path).unwrap()).unwrap();
+    assert_eq!(delta["/platform_manager/log/level"]["state"], "set");
+
+    let baud_path = "/platform_manager/io_devices[id = ECU0]/baud_rate";
+    let output_baud_set = Command::new(env!("CARGO_BIN_EXE_rekv"))
+        .args([
+            "--uds",
+            socket_path.to_str().unwrap(),
+            "set",
+            baud_path,
+            "57600",
+        ])
+        .output()
+        .expect("Failed to change baud rate");
+    assert!(output_baud_set.status.success());
+
+    let output_restore = Command::new(env!("CARGO_BIN_EXE_rekv"))
+        .args(["--uds", socket_path.to_str().unwrap(), "restore", baud_path])
+        .output()
+        .expect("Failed to restore backup");
+    assert!(output_restore.status.success());
+
+    let output_baud = Command::new(env!("CARGO_BIN_EXE_rekv"))
+        .args(["--uds", socket_path.to_str().unwrap(), "get", baud_path])
+        .output()
+        .expect("Failed to read restored baud rate");
+    assert!(output_baud.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&output_baud.stdout).trim(),
+        "115200"
+    );
+
+    let output_create = Command::new(env!("CARGO_BIN_EXE_rekv"))
+        .args([
+            "--uds",
+            socket_path.to_str().unwrap(),
+            "set",
+            "/temporary/setting",
+            "true",
+        ])
+        .output()
+        .expect("Failed to create temporary setting");
+    assert!(output_create.status.success());
+    let output_delete = Command::new(env!("CARGO_BIN_EXE_rekv"))
+        .args([
+            "--uds",
+            socket_path.to_str().unwrap(),
+            "delete",
+            "/temporary/setting",
+        ])
+        .output()
+        .expect("Failed to delete temporary setting");
+    assert!(output_delete.status.success());
 
     // 5. Clean up daemon process
     let _ = daemon.kill();

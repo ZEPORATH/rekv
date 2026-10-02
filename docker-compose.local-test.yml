@@ -1,0 +1,71 @@
+services:
+  configd:
+    build:
+      context: .
+      dockerfile: Dockerfile.local-test
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        if [ ! -s /var/lib/rekv/settings.json ]; then
+          cp /seed/settings.json /var/lib/rekv/settings.json;
+        fi;
+        exec rekv daemon
+        --config /var/lib/rekv/settings.json
+        --uds /run/rekv/rekv.sock
+        --bind-address 0.0.0.0
+        --port 50051
+        --http-port 8080
+    volumes:
+      - rekv-settings:/var/lib/rekv
+      - rekv-socket:/run/rekv
+      - ./tests/fixtures/settings.json:/seed/settings.json:ro
+    ports:
+      - "0.0.0.0:50051:50051"
+      - "0.0.0.0:18080:8080"
+    healthcheck:
+      test:
+        - CMD
+        - rekv
+        - --address
+        - 0.0.0.0:50051
+        - get
+        - /platform_manager/io_devices[id = ECU0]/baud_rate
+      interval: 2s
+      timeout: 2s
+      retries: 20
+      start_period: 2s
+
+  web:
+    build:
+      context: .
+      dockerfile: clients/go/Dockerfile.local-test
+    command:
+      - --target
+      - configd:50051
+      - --listen
+      - 0.0.0.0:8090
+      - --web-root
+      - /app/web
+    depends_on:
+      configd:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:8099:8090"
+
+  cpp-watcher:
+    build:
+      context: .
+      dockerfile: clients/cpp/Dockerfile.local-test
+    command:
+      - /run/rekv/rekv.sock
+    depends_on:
+      configd:
+        condition: service_healthy
+    volumes:
+      - rekv-socket:/run/rekv
+    init: true
+
+volumes:
+  rekv-settings:
+  rekv-socket:

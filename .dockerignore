@@ -1,0 +1,6 @@
+.git
+target
+web/node_modules
+web/dist
+clients/cpp/read_value
+clients/cpp/watch_baud_rate

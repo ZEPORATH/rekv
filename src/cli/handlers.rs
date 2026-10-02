@@ -1,9 +1,10 @@
-use std::path::Path;
 use serde_json::Value;
+use std::path::Path;
 
-use crate::api::grpc::{GetRequest, RekvServiceClient, SetRequest, WatchRequest};
-use crate::api::uds::{send_uds_request, UdsRequest, UdsResponse};
+use crate::api::grpc::{GetRequest, RekvServiceClient, RpcCallRequest, SetRequest, WatchRequest};
+use crate::api::uds::{send_rpc_request, send_uds_request, UdsRequest, UdsResponse};
 use crate::constants::{DEFAULT_GRPC_ADDRESS, JSON_NULL};
+use crate::protocol::RpcRequest;
 
 /// Execute CLI GET request (tries UDS first, falls back to gRPC).
 pub async fn execute_get(
@@ -37,11 +38,7 @@ async fn execute_get_uds(path: &str, uds_path: &Path) -> Result<(), Box<dyn std:
     let resp = send_uds_request(uds_path, &req).await?;
 
     match resp {
-        UdsResponse::Ok {
-            found,
-            value,
-            ..
-        } => {
+        UdsResponse::Ok { found, value, .. } => {
             if found.unwrap_or(false) {
                 if let Some(val) = value {
                     print_formatted_json(&val);
@@ -118,6 +115,103 @@ pub async fn execute_set(
 
     // 3. Fallback to default local gRPC port
     execute_set_grpc(path, &json_val, DEFAULT_GRPC_ADDRESS).await
+}
+
+pub async fn execute_delete(
+    path: &str,
+    address: Option<&str>,
+    uds_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    execute_service_call("delete", Some(path), address, uds_path).await
+}
+
+pub async fn execute_backup(
+    address: Option<&str>,
+    uds_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    execute_service_call("backup", None, address, uds_path).await
+}
+
+pub async fn execute_restore(
+    path: &str,
+    address: Option<&str>,
+    uds_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    execute_service_call("restore", Some(path), address, uds_path).await
+}
+
+async fn execute_service_call(
+    method: &str,
+    path: Option<&str>,
+    address: Option<&str>,
+    uds_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let request = RpcRequest {
+        id: 1,
+        method: method.to_string(),
+        path: path.map(str::to_string),
+        value: None,
+    };
+    let (ok, error) = if let Some(address) = address {
+        let response = call_grpc(address, request).await?;
+        (
+            response.ok,
+            format!("{}: {}", response.error_code, response.error_message),
+        )
+    } else if uds_path.exists() {
+        let response = send_rpc_request(uds_path, &request)
+            .await
+            .map_err(|error| std::io::Error::other(error.to_string()))?;
+        (
+            response.ok,
+            response
+                .error
+                .map(|error| format!("{:?}: {}", error.code, error.message))
+                .unwrap_or_default(),
+        )
+    } else {
+        let response = call_grpc(DEFAULT_GRPC_ADDRESS, request).await?;
+        (
+            response.ok,
+            format!("{}: {}", response.error_code, response.error_message),
+        )
+    };
+
+    if !ok {
+        return Err(std::io::Error::other(error).into());
+    }
+    match method {
+        "delete" => println!("Deleted {}", path.unwrap_or_default()),
+        "backup" => println!("Delta saved to the settings directory's _delta.json"),
+        "restore" => println!("Restored {} from the original settings", path.unwrap_or_default()),
+        _ => {}
+    }
+    Ok(())
+}
+
+async fn call_grpc(
+    address: &str,
+    request: RpcRequest,
+) -> Result<crate::api::grpc::RpcCallResponse, Box<dyn std::error::Error>> {
+    let endpoint = if address.starts_with("http://") || address.starts_with("https://") {
+        address.to_string()
+    } else {
+        format!("http://{}", address)
+    };
+    let channel = tonic::transport::Channel::from_shared(endpoint)?
+        .connect()
+        .await?;
+    let mut client = RekvServiceClient::new(channel);
+    let response = client
+        .call(RpcCallRequest {
+            id: request.id,
+            method: request.method,
+            path: request.path.unwrap_or_default(),
+            json_value: String::new(),
+        })
+        .await?
+        .into_inner();
+    Ok(response)
 }
 
 async fn execute_set_uds(
@@ -250,10 +344,7 @@ pub async fn execute_watch(
         };
         println!(
             "[{}] {} -> {} (was: {})",
-            event.timestamp_ms,
-            event.path,
-            event.new_value,
-            old_repr
+            event.timestamp_ms, event.path, event.new_value, old_repr
         );
     }
 
